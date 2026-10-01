@@ -598,6 +598,8 @@ export class Game {
     this.activeProjectiles = [];
     this.currentShotPath = { positions: [], color: weapon.color, impactPos: null, sampleCounter: 0 };
 
+    const fireVelocity = tank.getFireVelocity();
+
     if (weapon.elevationOffsets) {
       if (weapon.behavior === 'tracer') this.clearTracerLabels();
       const baseElevation = tank.barrelElevation;
@@ -618,14 +620,14 @@ export class Game {
         this.activeProjectiles.push(proj);
       }
     } else {
-      const velocity = tank.getFireVelocity();
       const proj = new Projectile(
-        this.scene, startPos, velocity, weapon,
+        this.scene, startPos, fireVelocity, weapon,
         this.wind, this.terrain, this.tanks
       );
       this.activeProjectiles.push(proj);
     }
 
+    this.sideView.showFlight(tank, this.terrain, this.wind, fireVelocity);
     this.cameraCtrl.startFollow(this.activeProjectiles[0]);
   }
 
@@ -1433,12 +1435,15 @@ export class Game {
         allDone = false;
       }
 
-      if (this.currentShotPath && this.activeProjectiles.length > 0) {
+      if (this.activeProjectiles.length > 0) {
         const lead = this.activeProjectiles.find(p => p.alive);
         if (lead) {
-          this.currentShotPath.sampleCounter++;
-          if (this.currentShotPath.sampleCounter % 2 === 0) {
-            this.currentShotPath.positions.push({ x: lead.pos.x, y: lead.pos.y, z: lead.pos.z });
+          this.sideView.trackProjectile(lead.pos);
+          if (this.currentShotPath) {
+            this.currentShotPath.sampleCounter++;
+            if (this.currentShotPath.sampleCounter % 2 === 0) {
+              this.currentShotPath.positions.push({ x: lead.pos.x, y: lead.pos.y, z: lead.pos.z });
+            }
           }
         }
       }
@@ -1448,6 +1453,7 @@ export class Game {
           this.replayData.push(this.currentShotPath);
         }
         this.currentShotPath = null;
+        this.sideView.hide();
         this.state = STATES.IMPACT;
         this.impactTimer = 0;
       }
