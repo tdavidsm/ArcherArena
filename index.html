@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Scorched Archery</title>
+  <link rel="stylesheet" href="css/style.css?v=1">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <canvas id="sideViewCanvas"></canvas>
+
+  <div id="startScreen" class="screen">
+    <h1>Scorched Archery</h1>
+    <p class="subtitle">A Physics Archery Duel</p>
+    <div class="start-options">
+      <button id="btnStart">Start Game</button>
+    </div>
+    <div class="controls-info">
+      <h3>How to Play</h3>
+      <div class="controls-list">
+        <p>Use the on-screen controls to aim your bow, draw power, and loose arrows at your opponent.</p>
+        <p>Cycle weapons, scout your trajectory, and move your archer into better positions.</p>
+        <p>Drag the background to orbit the camera. Pinch to zoom.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameOverScreen" class="screen hidden">
+    <h1 id="winnerText"></h1>
+    <p id="winnerSubtext"></p>
+    <button id="btnRestart">Play Again</button>
+  </div>
+
+  <div id="hud" class="hidden">
+    <div id="turnBanner" class="hidden">
+      <span id="turnText"></span>
+    </div>
+
+    <div id="topBar">
+      <div id="p1Info" class="player-info">
+        <span class="player-name" style="color: #4fc3f7">P1</span>
+        <div class="health-bar"><div id="p1Health" class="health-fill p1"></div></div>
+        <span id="p1HealthText" class="health-text">100</span>
+      </div>
+      <div id="windIndicator">
+        <div class="wind-label">WIND</div>
+        <canvas id="windCanvas" width="100" height="50"></canvas>
+        <div id="windSpeed"></div>
+      </div>
+      <div id="p2Info" class="player-info">
+        <span class="player-name" style="color: #ef5350">P2</span>
+        <div class="health-bar"><div id="p2Health" class="health-fill p2"></div></div>
+        <span id="p2HealthText" class="health-text">100</span>
+      </div>
+    </div>
+
+    <div id="touchControls">
+      <!-- Left side: Aim controls -->
+      <div id="leftControls">
+        <div id="aimPad">
+          <button class="aim-btn" data-key="KeyW" id="btnUp">&#9650;</button>
+          <div class="aim-mid-row">
+            <button class="aim-btn" data-key="KeyA" id="btnLeft">&#9664;</button>
+            <div class="aim-center-label">AIM</div>
+            <button class="aim-btn" data-key="KeyD" id="btnRight">&#9654;</button>
+          </div>
+          <button class="aim-btn" data-key="KeyS" id="btnDown">&#9660;</button>
+        </div>
+        <div id="joystickArea">
+          <div id="joystickBase">
+            <div id="joystickKnob"></div>
+          </div>
+          <div class="joystick-label">MOVE</div>
+          <div id="moveConfirm" class="hidden">
+            <button id="btnMoveOk" class="move-confirm-btn ok">&#10003; GO</button>
+            <button id="btnMoveCancel" class="move-confirm-btn cancel">&#10007;</button>
+          </div>
+          <div id="fuelInfo">
+            <label>STAMINA</label>
+            <div class="fuel-bar-container">
+              <div id="fuelBar" class="fuel-bar-fill"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center: Info displays -->
+      <div id="centerControls">
+        <div id="aimInfo">
+          <div class="aim-row">
+            <label>Elev</label>
+            <div class="aim-value" id="angleDisplay">45.0°</div>
+          </div>
+          <div class="aim-row">
+            <label>Draw</label>
+            <div class="aim-value" id="powerDisplay">50</div>
+          </div>
+          <div class="aim-row">
+            <label>Aim</label>
+            <div class="aim-value" id="turretDisplay">0°</div>
+          </div>
+        </div>
+
+        <div id="powerControls">
+          <button class="power-btn" data-key="KeyQ" id="btnPowerDown">&#8722; DRAW</button>
+          <div class="power-bar-container">
+            <div id="powerBar" class="power-bar-fill"></div>
+          </div>
+          <button class="power-btn" data-key="KeyE" id="btnPowerUp">DRAW +</button>
+        </div>
+      </div>
+
+      <!-- Right side: Fire + Weapons -->
+      <div id="rightControls">
+        <button id="btnFire" class="fire-btn">LOOSE!</button>
+
+        <div id="weaponSelector">
+          <button id="btnWeaponPrev" class="weapon-cycle-btn">&#9664;</button>
+          <div class="weapon-display">
+            <div id="weaponName" class="weapon-name">Short Arrow</div>
+            <div id="weaponAmmo" class="weapon-ammo">&#8734;</div>
+          </div>
+          <button id="btnWeaponNext" class="weapon-cycle-btn">&#9654;</button>
+        </div>
+
+        <button id="btnSideView" class="side-view-btn">SCOUT VIEW</button>
+        <div id="sideViewTimer" class="hidden">
+          <div id="sideViewTimeBar" class="side-view-time-fill"></div>
+        </div>
+        <button id="btnCameraToggle" class="camera-toggle-btn">AIM VIEW</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
