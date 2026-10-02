@@ -3,20 +3,20 @@ import * as THREE from 'three';
 const GRAVITY = 9.81;
 const SIM_DT = 0.02;
 const TRAIL_LENGTH = 80;
+const TORNADO_PULL_RADIUS = 25;
+const TORNADO_PULL_STRENGTH = 15;
 
 export class Projectile {
-  constructor(scene, startPos, velocity, weapon, wind, terrain, tanks) {
+  constructor(scene, startPos, velocity, weapon, wind, terrain, tanks, tornadoes) {
     this.scene = scene;
     this.terrain = terrain;
     this.tanks = tanks;
     this.weapon = weapon;
     this.wind = wind;
+    this.tornadoes = tornadoes || [];
     this.alive = true;
     this.finished = false;
     this.time = 0;
-    this.bouncesLeft = weapon.behavior === 'bouncer' ? weapon.bounces : 0;
-    this.rolling = false;
-    this.rollTime = 0;
     this.hasSplit = false;
     this.submunitions = [];
 
@@ -86,13 +86,21 @@ export class Projectile {
     for (let s = 0; s < steps; s++) {
       this.time += stepDt;
 
-      if (this.rolling) {
-        return this.updateRolling(stepDt);
-      }
-
       this.vel.y -= GRAVITY * stepDt;
       this.vel.x += this.wind.x * stepDt;
       this.vel.z += this.wind.z * stepDt;
+
+      // Apply tornado pull
+      for (const t of this.tornadoes) {
+        const dx = t.x - this.pos.x;
+        const dz = t.z - this.pos.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < TORNADO_PULL_RADIUS && dist > 1) {
+          const strength = TORNADO_PULL_STRENGTH * (1 - dist / TORNADO_PULL_RADIUS);
+          this.vel.x += (dx / dist) * strength * stepDt;
+          this.vel.z += (dz / dist) * strength * stepDt;
+        }
+      }
 
       this.pos.x += this.vel.x * stepDt;
       this.pos.y += this.vel.y * stepDt;
@@ -107,26 +115,6 @@ export class Projectile {
         const groundH = this.terrain.getHeight(this.pos.x, this.pos.z);
         if (this.pos.y <= groundH) {
           this.pos.y = groundH;
-
-          if (this.weapon.behavior === 'bouncer' && this.bouncesLeft > 0) {
-            this.bouncesLeft--;
-            const normal = this.terrain.getNormal(this.pos.x, this.pos.z);
-            const dot = this.vel.dot(normal);
-            this.vel.sub(normal.multiplyScalar(2 * dot));
-            this.vel.multiplyScalar(this.weapon.bounceFactor);
-            continue;
-          }
-
-          if (this.weapon.behavior === 'roller' && !this.rolling) {
-            this.rolling = true;
-            this.rollTime = 0;
-            continue;
-          }
-
-          if (this.weapon.behavior === 'tunneler') {
-            return this.tunnel();
-          }
-
           return this.impact();
         }
       }
@@ -158,56 +146,6 @@ export class Projectile {
     return null;
   }
 
-  updateRolling(dt) {
-    this.rollTime += dt;
-    if (this.rollTime > this.weapon.rollDuration) {
-      return this.impact();
-    }
-
-    const normal = this.terrain.getNormal(this.pos.x, this.pos.z);
-    const slopeForce = new THREE.Vector3(normal.x, 0, normal.z).normalize().multiplyScalar(15);
-    const speed = 12;
-
-    this.vel.x = this.vel.x * 0.95 + slopeForce.x * dt;
-    this.vel.z = this.vel.z * 0.95 + slopeForce.z * dt;
-    const mag = Math.sqrt(this.vel.x ** 2 + this.vel.z ** 2);
-    if (mag > speed) {
-      this.vel.x *= speed / mag;
-      this.vel.z *= speed / mag;
-    }
-
-    this.pos.x += this.vel.x * dt;
-    this.pos.z += this.vel.z * dt;
-
-    if (this.terrain.isOutOfBounds(this.pos.x, this.pos.z)) {
-      this.alive = false;
-      this.cleanup();
-      return { type: 'miss' };
-    }
-
-    this.pos.y = this.terrain.getHeight(this.pos.x, this.pos.z);
-    this.vel.y = 0;
-
-    this.mesh.position.copy(this.pos);
-
-    this.trailPositions[this.trailIndex * 3] = this.pos.x;
-    this.trailPositions[this.trailIndex * 3 + 1] = this.pos.y;
-    this.trailPositions[this.trailIndex * 3 + 2] = this.pos.z;
-    this.trailIndex = (this.trailIndex + 1) % TRAIL_LENGTH;
-    this.trail.geometry.attributes.position.needsUpdate = true;
-
-    for (const tank of this.tanks) {
-      if (!tank.alive) continue;
-      const dx = this.pos.x - tank.position.x;
-      const dz = this.pos.z - tank.position.z;
-      if (Math.sqrt(dx * dx + dz * dz) < 3) {
-        return this.impact();
-      }
-    }
-
-    return null;
-  }
-
   splitMIRV() {
     const count = this.weapon.submunitions;
     const spread = this.weapon.spreadRadius;
@@ -232,7 +170,8 @@ export class Projectile {
         { ...this.weapon, behavior: 'standard', name: 'Storm Arrow', damage: Math.round(this.weapon.damage * 5 / count) },
         this.wind,
         this.terrain,
-        this.tanks
+        this.tanks,
+        this.tornadoes
       );
       this.submunitions.push(sub);
     }
@@ -240,21 +179,6 @@ export class Projectile {
     this.alive = false;
     this.cleanup();
     return { type: 'split', submunitions: this.submunitions };
-  }
-
-  tunnel() {
-    const dir = this.vel.clone().normalize();
-    const length = this.weapon.tunnelLength;
-    const steps = 10;
-
-    for (let i = 0; i < steps; i++) {
-      const t = (i / steps) * length;
-      const x = this.pos.x + dir.x * t;
-      const z = this.pos.z + dir.z * t;
-      this.terrain.deform(x, z, 3, 4);
-    }
-
-    return this.impact();
   }
 
   impact() {

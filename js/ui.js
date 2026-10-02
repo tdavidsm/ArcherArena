@@ -119,6 +119,13 @@ export class UI {
     }
   }
 
+  getCompassDir(wind) {
+    if (wind.x === 0 && wind.z === 0) return '';
+    const angle = ((Math.atan2(wind.x, -wind.z) * 180 / Math.PI) + 360) % 360;
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return dirs[Math.round(angle / 45) % 8];
+  }
+
   drawWind(wind) {
     const ctx = this.windCtx;
     const w = this.windCanvas.width;
@@ -126,16 +133,16 @@ export class UI {
     ctx.clearRect(0, 0, w, h);
 
     const mag = Math.sqrt(wind.x * wind.x + wind.z * wind.z);
-    const angle = Math.atan2(wind.x, wind.z);
+    const angle = Math.atan2(wind.x, -wind.z);
 
     const cx = w / 2;
     const cy = h / 2;
     const maxLen = 20;
-    const len = Math.min(mag / 20 * maxLen, maxLen);
+    const len = Math.min(mag / 5 * maxLen, maxLen);
 
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(-angle);
+    ctx.rotate(angle);
 
     ctx.strokeStyle = 'rgba(255,255,255,0.7)';
     ctx.lineWidth = 2;
@@ -154,7 +161,8 @@ export class UI {
 
     ctx.restore();
 
-    this.windSpeed.textContent = mag.toFixed(1) + ' m/s';
+    const dir = this.getCompassDir(wind);
+    this.windSpeed.textContent = `${mag.toFixed(1)} m/s ${dir}`;
   }
 
   updateAll(tank, tanks, wind) {

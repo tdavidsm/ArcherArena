@@ -51,6 +51,9 @@ export class Game {
     this.tracerLabels = [];
     this.trees = [];
     this.ruins = [];
+    this.sheep = [];
+    this.tornadoes = [];
+    this.compassRoses = [];
     this.replayData = [];
     this.currentShotPath = null;
     this.replay = null;
@@ -489,6 +492,9 @@ export class Game {
       });
     }
     this.ruins = [];
+    this.cleanupSheep();
+    this.cleanupTornadoes();
+    this.cleanupCompassRoses();
     this.cleanupReplay();
     this.replayData = [];
     this.currentShotPath = null;
@@ -513,6 +519,7 @@ export class Game {
 
     this.placeTrees(a1.position, a2.position);
     this.placeRuins(a1.position, a2.position);
+    this.createCompassRoses();
 
     this.randomizeWind();
 
@@ -614,7 +621,7 @@ export class Game {
         );
         const proj = new Projectile(
           this.scene, startPos.clone(), velocity, weapon,
-          this.wind, this.terrain, this.tanks
+          this.wind, this.terrain, this.tanks, this.tornadoes
         );
         proj.launchAngleDeg = Math.round((baseAngleDeg + offsetDeg) * 10) / 10;
         this.activeProjectiles.push(proj);
@@ -622,7 +629,7 @@ export class Game {
     } else {
       const proj = new Projectile(
         this.scene, startPos, fireVelocity, weapon,
-        this.wind, this.terrain, this.tanks
+        this.wind, this.terrain, this.tanks, this.tornadoes
       );
       this.activeProjectiles.push(proj);
     }
@@ -643,6 +650,24 @@ export class Game {
       }
       if (result.weapon.behavior === 'napalm') {
         this.startNapalmFlow(result.position, result.weapon);
+        return;
+      }
+      if (result.weapon.behavior === 'teleport') {
+        this.handleTeleport(result.position, result.weapon);
+        return;
+      }
+      if (result.weapon.behavior === 'sheep') {
+        this.spawnSheep(result.position);
+        this.cameraCtrl.showImpact(result.position);
+        return;
+      }
+      if (result.weapon.behavior === 'treegrow') {
+        this.growTreesAt(result.position);
+        this.cameraCtrl.showImpact(result.position);
+        return;
+      }
+      if (result.weapon.behavior === 'tornado') {
+        this.spawnTornado(result.position, result.weapon);
         return;
       }
       this.explosions.createExplosion(
@@ -957,6 +982,299 @@ export class Game {
         this.ruins.splice(i, 1);
       }
     }
+  }
+
+  handleTeleport(position, weapon) {
+    this.explosions.createExplosion(position, weapon, this.terrain, this.tanks);
+    this.destroyTreesInRadius(position.x, position.z, weapon.blastRadius);
+    this.cameraCtrl.showImpact(position);
+    this.ui.updateHealth(this.tanks);
+
+    const tank = this.currentTank;
+    const half = this.terrain.worldSize / 2;
+    let newX, newZ, attempts = 0;
+    do {
+      newX = randRange(-half + 15, half - 15);
+      newZ = randRange(-half + 15, half - 15);
+      const dx = newX - tank.position.x;
+      const dz = newZ - tank.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      attempts++;
+      if (dist > 40 && this.terrain.getHeight(newX, newZ) > 1) break;
+    } while (attempts < 50);
+
+    tank.setPosition(newX, newZ);
+  }
+
+  spawnSheep(position) {
+    const enemy = this.otherTank;
+    const group = new THREE.Group();
+
+    const bodyGeo = new THREE.SphereGeometry(1.0, 8, 6);
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0xf5f5dc });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.scale.set(1, 0.8, 1.3);
+    body.position.y = 1.0;
+    group.add(body);
+
+    const headGeo = new THREE.SphereGeometry(0.5, 6, 6);
+    const headMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.set(0, 1.2, 1.2);
+    group.add(head);
+
+    const legGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 4);
+    const legMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    for (const [lx, lz] of [[-0.4, 0.5], [0.4, 0.5], [-0.4, -0.5], [0.4, -0.5]]) {
+      const leg = new THREE.Mesh(legGeo, legMat);
+      leg.position.set(lx, 0.4, lz);
+      group.add(leg);
+    }
+
+    const y = this.terrain.getHeight(position.x, position.z);
+    group.position.set(position.x, y, position.z);
+    this.scene.add(group);
+
+    this.sheep.push({
+      group,
+      x: position.x,
+      z: position.z,
+      target: enemy,
+      speed: 12,
+      lifetime: 15,
+      damage: 30,
+    });
+  }
+
+  updateSheep(dt) {
+    for (let i = this.sheep.length - 1; i >= 0; i--) {
+      const s = this.sheep[i];
+      s.lifetime -= dt;
+
+      if (s.lifetime <= 0 || !s.target.alive) {
+        this.scene.remove(s.group);
+        s.group.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+        this.sheep.splice(i, 1);
+        continue;
+      }
+
+      const tx = s.target.position.x;
+      const tz = s.target.position.z;
+      const dx = tx - s.x;
+      const dz = tz - s.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < 3) {
+        s.target.takeDamage(s.damage);
+        this.ui.updateHealth(this.tanks);
+        this.explosions.createExplosion(
+          s.target.position, { blastRadius: 4, craterDepth: 0, damage: 0, color: '#fff' },
+          this.terrain, []
+        );
+        this.scene.remove(s.group);
+        s.group.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+        this.sheep.splice(i, 1);
+        continue;
+      }
+
+      const move = s.speed * dt;
+      s.x += (dx / dist) * move;
+      s.z += (dz / dist) * move;
+
+      if (!this.terrain.isOutOfBounds(s.x, s.z)) {
+        const y = this.terrain.getHeight(s.x, s.z);
+        s.group.position.set(s.x, y, s.z);
+        s.group.rotation.y = Math.atan2(dx, dz);
+      }
+    }
+  }
+
+  cleanupSheep() {
+    for (const s of this.sheep) {
+      this.scene.remove(s.group);
+      s.group.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+    }
+    this.sheep = [];
+  }
+
+  growTreesAt(position) {
+    const count = 5 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.random() * 8;
+      const x = position.x + Math.cos(angle) * r;
+      const z = position.z + Math.sin(angle) * r;
+
+      if (this.terrain.isOutOfBounds(x, z)) continue;
+      const h = this.terrain.getHeight(x, z);
+      if (h < 0.5) continue;
+
+      const group = new THREE.Group();
+      const isPine = Math.random() > 0.4;
+      const scale = 0.7 + Math.random() * 0.6;
+
+      const trunkH = (isPine ? 3 : 2.5) * scale;
+      const trunkR = 0.25 * scale;
+      const trunkGeo = new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 6);
+      const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = trunkH / 2;
+      trunk.castShadow = true;
+      group.add(trunk);
+
+      if (isPine) {
+        const tiers = 2 + Math.floor(Math.random() * 2);
+        for (let t = 0; t < tiers; t++) {
+          const tierR = (2.0 - t * 0.5) * scale;
+          const tierH = (2.5 - t * 0.4) * scale;
+          const leafGeo = new THREE.ConeGeometry(tierR, tierH, 7);
+          const green = 0x2e7d32 + Math.floor(Math.random() * 0x001500);
+          const leafMat = new THREE.MeshLambertMaterial({ color: green });
+          const leaf = new THREE.Mesh(leafGeo, leafMat);
+          leaf.position.y = trunkH + t * tierH * 0.55 + tierH * 0.3;
+          leaf.castShadow = true;
+          group.add(leaf);
+        }
+      } else {
+        const crownR = (1.8 + Math.random() * 0.8) * scale;
+        const leafGeo = new THREE.SphereGeometry(crownR, 8, 6);
+        const green = 0x388e3c + Math.floor(Math.random() * 0x002200);
+        const leafMat = new THREE.MeshLambertMaterial({ color: green });
+        const leaf = new THREE.Mesh(leafGeo, leafMat);
+        leaf.position.y = trunkH + crownR * 0.6;
+        leaf.castShadow = true;
+        group.add(leaf);
+      }
+
+      group.position.set(x, h, z);
+      group.rotation.y = Math.random() * Math.PI * 2;
+      this.scene.add(group);
+      this.trees.push({ group, x, z });
+    }
+  }
+
+  spawnTornado(position, weapon) {
+    this.explosions.createExplosion(position, weapon, this.terrain, this.tanks);
+    this.destroyTreesInRadius(position.x, position.z, weapon.blastRadius);
+    this.cameraCtrl.showImpact(position);
+    this.ui.updateHealth(this.tanks);
+
+    const x = position.x;
+    const z = position.z;
+    const y = this.terrain.getHeight(x, z);
+
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+
+    const funnelGeo = new THREE.CylinderGeometry(0.5, 3, 12, 12, 1, true);
+    const funnelMat = new THREE.MeshBasicMaterial({
+      color: 0x80deea, transparent: true, opacity: 0.3, side: THREE.DoubleSide,
+    });
+    const funnel = new THREE.Mesh(funnelGeo, funnelMat);
+    funnel.position.y = 6;
+    group.add(funnel);
+
+    const innerGeo = new THREE.CylinderGeometry(0.3, 2, 10, 8, 1, true);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0xb2ebf2, transparent: true, opacity: 0.2, side: THREE.DoubleSide,
+    });
+    const inner = new THREE.Mesh(innerGeo, innerMat);
+    inner.position.y = 5;
+    group.add(inner);
+
+    const debrisCount = 12;
+    for (let i = 0; i < debrisCount; i++) {
+      const dGeo = new THREE.SphereGeometry(0.15 + Math.random() * 0.2, 4, 4);
+      const dMat = new THREE.MeshBasicMaterial({
+        color: Math.random() > 0.5 ? 0x795548 : 0x4caf50, transparent: true, opacity: 0.6,
+      });
+      const debris = new THREE.Mesh(dGeo, dMat);
+      debris.userData.angle = Math.random() * Math.PI * 2;
+      debris.userData.radius = 1.5 + Math.random() * 2;
+      debris.userData.height = Math.random() * 10;
+      debris.userData.speed = 2 + Math.random() * 3;
+      group.add(debris);
+    }
+
+    this.scene.add(group);
+    this.tornadoes.push({ group, x, z, y, time: 0 });
+  }
+
+  updateTornadoes(dt) {
+    for (const t of this.tornadoes) {
+      t.time += dt;
+      const funnel = t.group.children[0];
+      const inner = t.group.children[1];
+      if (funnel) funnel.rotation.y += dt * 3;
+      if (inner) inner.rotation.y -= dt * 5;
+
+      for (let i = 2; i < t.group.children.length; i++) {
+        const d = t.group.children[i];
+        d.userData.angle += dt * d.userData.speed;
+        d.position.x = Math.cos(d.userData.angle) * d.userData.radius;
+        d.position.z = Math.sin(d.userData.angle) * d.userData.radius;
+        d.position.y = d.userData.height + Math.sin(t.time * 2 + i) * 1;
+      }
+    }
+  }
+
+  cleanupTornadoes() {
+    for (const t of this.tornadoes) {
+      this.scene.remove(t.group);
+      t.group.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+    }
+    this.tornadoes = [];
+  }
+
+  createCompassRoses() {
+    const half = this.terrain.worldSize / 2;
+    const inset = 8;
+    const labels = [
+      { text: 'NW', x: -half + inset, z: -half + inset },
+      { text: 'NE', x: half - inset, z: -half + inset },
+      { text: 'SW', x: -half + inset, z: half - inset },
+      { text: 'SE', x: half - inset, z: half - inset },
+      { text: 'N', x: 0, z: -half + inset },
+      { text: 'S', x: 0, z: half - inset },
+      { text: 'W', x: -half + inset, z: 0 },
+      { text: 'E', x: half - inset, z: 0 },
+    ];
+
+    for (const l of labels) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.font = 'bold 40px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 4;
+      ctx.strokeText(l.text, 64, 32);
+      ctx.fillText(l.text, 64, 32);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+      const sprite = new THREE.Sprite(mat);
+      const y = this.terrain.isOutOfBounds(l.x, l.z)
+        ? 5 : this.terrain.getHeight(l.x, l.z) + 5;
+      sprite.position.set(l.x, y, l.z);
+      sprite.scale.set(6, 3, 1);
+      sprite.renderOrder = 998;
+      this.scene.add(sprite);
+
+      this.compassRoses.push({ sprite, texture, mat });
+    }
+  }
+
+  cleanupCompassRoses() {
+    for (const c of this.compassRoses) {
+      this.scene.remove(c.sprite);
+      c.texture.dispose();
+      c.mat.dispose();
+    }
+    this.compassRoses = [];
   }
 
   startNapalmFlow(position, weapon) {
@@ -1403,6 +1721,8 @@ export class Game {
       tank.update(dt);
     }
     this.updateNapalmFlow(dt);
+    this.updateSheep(dt);
+    this.updateTornadoes(dt);
 
     if (this.state === STATES.GAME_OVER) {
       this.updateReplay(dt);
@@ -1445,7 +1765,7 @@ export class Game {
         }
       }
 
-      if (allDone && !this.explosions.active && !this.napalmFlow) {
+      if (allDone && !this.explosions.active && !this.napalmFlow && this.sheep.length === 0) {
         if (this.currentShotPath && this.currentShotPath.positions.length > 2) {
           this.replayData.push(this.currentShotPath);
         }
