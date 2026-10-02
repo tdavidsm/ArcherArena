@@ -1166,20 +1166,20 @@ export class Game {
     const group = new THREE.Group();
     group.position.set(x, y, z);
 
-    const funnelGeo = new THREE.CylinderGeometry(0.5, 3, 12, 12, 1, true);
+    const funnelGeo = new THREE.CylinderGeometry(4, 0.5, 14, 12, 1, true);
     const funnelMat = new THREE.MeshBasicMaterial({
       color: 0x80deea, transparent: true, opacity: 0.3, side: THREE.DoubleSide,
     });
     const funnel = new THREE.Mesh(funnelGeo, funnelMat);
-    funnel.position.y = 6;
+    funnel.position.y = 7;
     group.add(funnel);
 
-    const innerGeo = new THREE.CylinderGeometry(0.3, 2, 10, 8, 1, true);
+    const innerGeo = new THREE.CylinderGeometry(2.5, 0.3, 12, 8, 1, true);
     const innerMat = new THREE.MeshBasicMaterial({
       color: 0xb2ebf2, transparent: true, opacity: 0.2, side: THREE.DoubleSide,
     });
     const inner = new THREE.Mesh(innerGeo, innerMat);
-    inner.position.y = 5;
+    inner.position.y = 6;
     group.add(inner);
 
     const debrisCount = 12;
