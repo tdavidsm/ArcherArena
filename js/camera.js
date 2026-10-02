@@ -82,6 +82,50 @@ export class CameraController {
     this._transitioning = false;
   }
 
+  startSideView(trajectory, currentCamPos) {
+    if (trajectory.length < 2) return;
+    this.mode = 'sideview';
+    this.orbit.enabled = false;
+    this._transitioning = false;
+
+    const start = trajectory[0];
+    const end = trajectory[trajectory.length - 1];
+    const mid = {
+      x: (start.x + end.x) / 2,
+      y: 0,
+      z: (start.z + end.z) / 2,
+    };
+
+    let maxY = 0;
+    for (const p of trajectory) {
+      if (p.y > maxY) maxY = p.y;
+    }
+
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
+    const range = Math.sqrt(dx * dx + dz * dz);
+    const ndx = range > 0.1 ? dx / range : 1;
+    const ndz = range > 0.1 ? dz / range : 0;
+
+    const sideA = new THREE.Vector3(-ndz, 0, ndx);
+    const sideB = new THREE.Vector3(ndz, 0, -ndx);
+    const camCenter = new THREE.Vector3(mid.x, mid.y, mid.z);
+    const distA = currentCamPos.clone().sub(camCenter.clone().add(sideA)).length();
+    const distB = currentCamPos.clone().sub(camCenter.clone().add(sideB)).length();
+    const sideDir = distA < distB ? sideA : sideB;
+
+    const span = Math.max(range, maxY * 2, 30);
+    const camDist = span * 0.9;
+    const lookAtY = maxY * 0.4;
+
+    this._sideViewCamPos = new THREE.Vector3(
+      mid.x + sideDir.x * camDist,
+      lookAtY + span * 0.25,
+      mid.z + sideDir.z * camDist
+    );
+    this._sideViewTarget = new THREE.Vector3(mid.x, lookAtY, mid.z);
+  }
+
   showImpact(position) {
     this.mode = 'impact';
     this.impactTarget = position.clone();
@@ -185,6 +229,13 @@ export class CameraController {
         this.enemyArrow.scale.setScalar(pulse);
       }
 
+      return;
+    }
+
+    if (this.mode === 'sideview' && this._sideViewCamPos) {
+      this.camera.position.lerp(this._sideViewCamPos, dt * 4);
+      this.orbit.target.lerp(this._sideViewTarget, dt * 4);
+      this.orbit.update();
       return;
     }
 

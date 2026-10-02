@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Terrain } from './terrain.js';
 import { Archer } from './archer.js';
-import { Projectile } from './projectile.js';
+import { Projectile, predictTrajectory } from './projectile.js';
 import { ExplosionManager } from './explosion.js';
 import { CameraController } from './camera.js';
 import { SideView } from './sideview.js';
@@ -627,8 +627,8 @@ export class Game {
       this.activeProjectiles.push(proj);
     }
 
-    this.sideView.showFlight(tank, this.terrain, this.wind, fireVelocity);
-    this.cameraCtrl.startFollow(this.activeProjectiles[0]);
+    const trajectory = predictTrajectory(startPos, fireVelocity, this.wind, this.terrain);
+    this.cameraCtrl.startSideView(trajectory, this.camera.position);
   }
 
   handleImpact(result) {
@@ -1437,13 +1437,10 @@ export class Game {
 
       if (this.activeProjectiles.length > 0) {
         const lead = this.activeProjectiles.find(p => p.alive);
-        if (lead) {
-          this.sideView.trackProjectile(lead.pos);
-          if (this.currentShotPath) {
-            this.currentShotPath.sampleCounter++;
-            if (this.currentShotPath.sampleCounter % 2 === 0) {
-              this.currentShotPath.positions.push({ x: lead.pos.x, y: lead.pos.y, z: lead.pos.z });
-            }
+        if (lead && this.currentShotPath) {
+          this.currentShotPath.sampleCounter++;
+          if (this.currentShotPath.sampleCounter % 2 === 0) {
+            this.currentShotPath.positions.push({ x: lead.pos.x, y: lead.pos.y, z: lead.pos.z });
           }
         }
       }
@@ -1453,7 +1450,6 @@ export class Game {
           this.replayData.push(this.currentShotPath);
         }
         this.currentShotPath = null;
-        this.sideView.hide();
         this.state = STATES.IMPACT;
         this.impactTimer = 0;
       }
